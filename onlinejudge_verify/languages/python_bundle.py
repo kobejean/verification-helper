@@ -3,24 +3,35 @@ import os
 import sys
 from typing import Set, Dict, List, Tuple, Optional
 from pathlib import Path
+from collections import defaultdict
 
 class PythonBundler:
     def __init__(self, include_paths: List[Path]):
         self.include_paths = [p.resolve() for p in include_paths]
-        self.processed_files: Set[Path] = set()
+        self.processed_files: Set[str] = set()
         self.bundled_code: Dict[Path, str] = {}
-        self.import_order: List[Path] = []
-        self.top_level_imports: Set[str] = set()  # Track top-level imports
+        self.top_level_imports_paths: Set[str] = set()  # Track top-level imports
+        self.top_level_imports_modules: Set[str] = set()  # Track top-level imports
+        self.top_level_imports_from: Dict[str,Set[str]] = defaultdict(set)  # Track top-level imports
 
     def process_file(self, file_path: Path) -> None:
-        if file_path in self.processed_files:
+        if str(file_path) in self.processed_files:
             return
-        self.processed_files.add(file_path)
+        self.processed_files.add(str(file_path))
         with open(file_path, 'r') as file:
             source = file.read()
         tree = ast.parse(source)
         self.bundled_code[file_path] = self.process_imports(tree, file_path, source)
-        self.import_order.append(file_path)
+
+    def import_file(self, file_path: Path, is_top_level: bool) -> str:
+        is_duplicate = str(file_path) in self.top_level_imports_paths
+        if not is_duplicate:
+            if is_top_level:
+                self.top_level_imports_paths.add(str(file_path))
+            self.process_file(file_path)
+            return self.bundled_code[file_path]
+        return ""
+
 
     def process_imports(self, tree: ast.AST, file_path: Path, source: str) -> str:
         class ImportProcessor(ast.NodeVisitor):
@@ -29,10 +40,25 @@ class PythonBundler:
                 self.imports: List[Tuple[int, int, str, str, bool]] = []  # Added boolean for is_duplicate
 
             def visit_Import(self, node):
+                good = True
+                # raise Exception([alias.name for alias in node.names])
                 for alias in node.names:
                     module_path = self.bundler.find_module(alias.name)
                     if module_path:
                         self.process_module(node, module_path)
+                    else:
+                        good = False
+                if not good:
+                    is_top_level = node.col_offset == 0
+                    new_names = set(alias.name for alias in node.names)
+                    union = self.bundler.top_level_imports_modules | new_names
+                    before = len(self.bundler.top_level_imports_modules)
+                    after = len(union)
+                    if before == after:
+                        # skip
+                        self.imports.append((node.lineno, node.col_offset, '', '', True))
+                    if is_top_level:
+                        self.bundler.top_level_imports_modules.update(new_names)
 
             def visit_ImportFrom(self, node):
                 if node.level > 0:
@@ -43,23 +69,37 @@ class PythonBundler:
                     module_path = Path(*parts)
                 else:
                     module_path = self.bundler.find_module(node.module)
+                    if not module_path:
+                        is_top_level = node.col_offset == 0
+                        new_names = set(alias.name for alias in node.names)
+                        union = self.bundler.top_level_imports_from[node.module] | new_names
+                        before = len(self.bundler.top_level_imports_from[node.module])
+                        after = len(union)
+                        if before == after:
+                            # skip
+                            self.imports.append((node.lineno, node.col_offset, '', '', True))
+                        if is_top_level:
+                            self.bundler.top_level_imports_from[node.module].update(new_names)
                 
                 if module_path:
                     self.process_module(node, module_path, from_import=True, import_names=node.names)
 
+
+
             def process_module(self, node, module_path: Path, from_import=False, import_names=None):
-                is_duplicate = str(module_path) in self.bundler.top_level_imports
-                if node.col_offset == 0 and not is_duplicate:
-                    self.bundler.top_level_imports.add(str(module_path))
+                is_duplicate = str(module_path) in self.bundler.top_level_imports_paths
+                is_top_level = node.col_offset == 0
                 
                 if not is_duplicate:
                     if module_path.is_dir():
-                        imported_code = self.bundler.process_package(module_path, from_import, import_names)
+                        imported_code = self.bundler.process_package(module_path, from_import, import_names, is_top_level)
                     else:
-                        self.bundler.process_file(module_path)
-                        imported_code = self.bundler.bundled_code[module_path]
+                        imported_code = self.bundler.import_file(module_path, is_top_level)
                 else:
                     imported_code = ""
+                    
+                if is_top_level and not is_duplicate:
+                    self.bundler.top_level_imports_paths.add(str(module_path))
                 
                 self.imports.append((node.lineno, node.col_offset, str(module_path), imported_code, is_duplicate))
 
@@ -95,7 +135,7 @@ class PythonBundler:
         # Add any remaining lines after the last import
         final_code.extend(lines[last_import_line:])
 
-        return '\n'.join(final_code)
+        return '\n'.join(final_code)+'\n'
 
     def find_module(self, module: str) -> Optional[Path]:
         for path in self.include_paths:
@@ -111,33 +151,24 @@ class PythonBundler:
         
         return None
 
-    def process_package(self, package_path: Path, from_import: bool, import_names: List[ast.alias]) -> str:
+    def process_package(self, package_path: Path, from_import: bool, import_names: List[ast.alias], is_top_level: bool) -> str:
         package_code = []
         
-        if from_import and import_names:
+        if from_import and not any(alias.name == '*' for alias in import_names):
             # Process specific imports
             for alias in import_names:
-                if alias.name == '*':
-                    # Import all non-private members, skipping those already imported at top level
-                    for item in package_path.iterdir():
-                        if item.is_file() and item.suffix == '.py' and not item.name.startswith('_'):
-                            if str(item) not in self.top_level_imports:
-                                self.process_file(item)
-                                package_code.append(self.bundled_code[item])
-                else:
-                    item_path = package_path / f"{alias.name}.py"
-                    if item_path.exists() and str(item_path) not in self.top_level_imports:
-                        self.process_file(item_path)
-                        package_code.append(self.bundled_code[item_path])
+                module_path = self.find_module(alias.name)
+                if module_path:
+                    package_code.append(self.import_file(module_path, is_top_level))
         else:
-            # Process all Python files in the package, skipping those already imported at top level
+            # Import all non-private members, skipping those already imported at top level
             for item in package_path.iterdir():
                 if item.is_file() and item.suffix == '.py' and not item.name.startswith('_'):
-                    if str(item) not in self.top_level_imports:
-                        self.process_file(item)
-                        package_code.append(self.bundled_code[item])
+                    package_code.append(self.import_file(item, is_top_level))
+                elif item.is_dir() and (item / '__init__.py').exists():
+                    package_code.append(self.process_package(item, from_import, import_names, is_top_level))
         
-        return '\n'.join(package_code)
+        return '\n'.join(code for code in package_code if code)
 
     def get_relative_path(self, file_path: Path) -> str:
         file_path = file_path.resolve()
