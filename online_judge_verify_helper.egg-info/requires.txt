@@ -1,0 +1,12 @@
+colorlog
+pyyaml
+online-judge-tools>=11.3.0
+setuptools
+toml
+importlab
+
+[dev]
+isort==5.10.1
+mypy==0.941
+pylint==2.7.3
+yapf==0.30.0

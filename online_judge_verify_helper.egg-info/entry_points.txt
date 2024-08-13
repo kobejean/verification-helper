@@ -1,0 +1,3 @@
+[console_scripts]
+oj-bundle = onlinejudge_bundle.main:main
+oj-verify = onlinejudge_verify.main:main

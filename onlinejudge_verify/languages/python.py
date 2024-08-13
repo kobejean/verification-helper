@@ -7,12 +7,14 @@ import sys
 import textwrap
 from logging import getLogger
 from typing import Any, Dict, List, Sequence, Tuple
+from pathlib import Path
 
 import importlab.environment
 import importlab.fs
 import importlab.graph
 
 from onlinejudge_verify.languages.models import Language, LanguageEnvironment
+from onlinejudge_verify.languages.python_bundle import PythonBundler
 
 logger = getLogger(__name__)
 
@@ -89,11 +91,10 @@ class PythonLanguage(Language):
     def list_dependencies(self, path: pathlib.Path, *, basedir: pathlib.Path) -> List[pathlib.Path]:
         return _python_list_depending_files(path.resolve(), basedir)
 
-    def bundle(self, path: pathlib.Path, *, basedir: pathlib.Path, options: Dict[str, Any]) -> bytes:
-        """
-        :throws NotImplementedError:
-        """
-        raise NotImplementedError
+    def bundle(self, path: Path, *, basedir: Path, options: Dict[str, Any]) -> bytes:
+        include_paths: List[Path] = options.get('include_paths', [])
+        bundler = PythonBundler(include_paths=[basedir] + include_paths)
+        return bundler.update(path)
 
     def is_verification_file(self, path: pathlib.Path, *, basedir: pathlib.Path) -> bool:
         return '.test.py' in path.name

@@ -1,0 +1,3 @@
+onlinejudge_bundle
+onlinejudge_verify
+onlinejudge_verify_resources
