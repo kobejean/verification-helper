@@ -86,9 +86,9 @@ class PythonBundler:
                 relative_path = self.get_relative_path(Path(module_path))
                 imported_lines = imported_code.splitlines()
                 if imported_lines:
-                    final_code.append(f"{indent}# BEGIN code from {relative_path}")
+                    # final_code.append(f"{indent}# BEGIN code from {relative_path}")
                     final_code.extend(f"{indent}{line}" for line in imported_lines)
-                    final_code.append(f"{indent}# END code from {relative_path}")
+                    # final_code.append(f"{indent}# END code from {relative_path}")
             
             last_import_line = lineno
 
