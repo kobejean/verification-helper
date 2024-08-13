@@ -50,6 +50,9 @@ class Language:
 
     def is_verification_file(self, path: pathlib.Path, *, basedir: pathlib.Path) -> bool:
         return '.test.' in path.name
+    
+    def is_library_file(self, path: pathlib.Path, *, basedir: pathlib.Path) -> bool:
+        return True
 
     @abc.abstractmethod
     def list_environments(self, path: pathlib.Path, *, basedir: pathlib.Path) -> Sequence[LanguageEnvironment]:

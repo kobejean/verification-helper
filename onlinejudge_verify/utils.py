@@ -19,6 +19,14 @@ def is_verification_file(path: pathlib.Path, *, basedir: Optional[pathlib.Path] 
     language = onlinejudge_verify.languages.list.get(path)
     return language is not None and language.is_verification_file(path, basedir=basedir)
 
+def is_library_file(path: pathlib.Path, *, basedir: Optional[pathlib.Path] = None) -> bool:
+    """`is_library_file` is a thin wrapper for `Languge.is_library_file`.  This function automatically get the language.
+    """
+
+    basedir = basedir or pathlib.Path.cwd()  # TODO: remove this. make basedir argument always required
+    language = onlinejudge_verify.languages.list.get(path)
+    return language is not None and language.is_library_file(path, basedir=basedir)
+
 
 def glob_with_predicate(pred: Callable[[pathlib.Path], bool]) -> Iterator[pathlib.Path]:
     """glob_with_basename iterates files whose basenames satisfy the predicate.
