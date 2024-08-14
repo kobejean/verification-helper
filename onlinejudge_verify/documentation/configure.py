@@ -33,8 +33,7 @@ def _find_matched_file_paths(pred: Callable[[pathlib.Path], bool], *, basedir: p
 
 def _find_source_code_paths(*, basedir: pathlib.Path) -> List[pathlib.Path]:
     def pred(path: pathlib.Path) -> bool:
-        return onlinejudge_verify.languages.list.get(path) is not None
-
+        return utils.is_verification_file(path) or utils.is_library_file(path)
     return _find_matched_file_paths(pred, basedir=basedir)
 
 
@@ -112,22 +111,11 @@ def _build_verification_status(paths: List[pathlib.Path], *, verified_with: Dict
     # list status for library files
     for path in paths:
         absolute_path = (basedir / path).resolve()
-        if not utils.is_verification_file(path, basedir=basedir) and utils.is_library_file(path, basedir=basedir):
+        if utils.is_library_file(path, basedir=basedir):
             status_list = []
             for verification_path in verified_with[absolute_path]:
                 status_list.append(verification_status[(basedir / verification_path).resolve()])
-            deb = f'''
-verification_status
-{verification_status}
-
-verified_with
-{verified_with}
-
-absolute_path
-{absolute_path}
-'''
             if not status_list:
-                # raise Exception(deb)
                 status = VerificationStatus.LIBRARY_NO_TESTS
             elif status_list.count(VerificationStatus.TEST_ACCEPTED) == len(status_list):
                 status = VerificationStatus.LIBRARY_ALL_AC
