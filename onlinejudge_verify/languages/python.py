@@ -49,7 +49,6 @@ class PythonLanguageEnvironment(LanguageEnvironment):
     def get_execute_command(self, path: pathlib.Path, *, basedir: pathlib.Path, tempdir: pathlib.Path) -> List[str]:
         return [sys.executable, str(tempdir / 'compiled.py')]
 
-
 @functools.lru_cache(maxsize=None)
 def _python_list_depending_files(path: pathlib.Path, basedir: pathlib.Path) -> List[pathlib.Path]:
     # compute the dependency graph of the `path`
@@ -71,18 +70,26 @@ def _python_list_depending_files(path: pathlib.Path, basedir: pathlib.Path) -> L
         node_deps_pairs = res_graph.deps_list()  # type: List[Tuple[str, List[str]]]
     except Exception as e:
         raise RuntimeError(f"Failed to analyze the dependency graph (circular imports?): {path}") from e
+    
     logger.debug('the dependency graph of %s: %s', str(path), node_deps_pairs)
-
+    
     # collect Python files which are depended by the `path` and under `basedir`
     res_deps = []  # type: List[pathlib.Path]
     res_deps.append(path.resolve())
+    
     for node_, deps_ in node_deps_pairs:
         deps = list(map(pathlib.Path, deps_))
         for dep in deps:
-            if basedir.resolve() in dep.resolve().parents and dep.name != "__init__.py":
-                res_deps.append(dep.resolve())
+            # Check if the dependency is not a builtin module
+            if not is_builtin_module(dep.stem):
+                if basedir.resolve() in dep.resolve().parents and dep.name != "__init__.py":
+                    res_deps.append(dep.resolve())
+    
     return list(set(res_deps))
 
+def is_builtin_module(module_name: str) -> bool:
+    """Check if a module is a built-in module."""
+    return module_name in sys.builtin_module_names or module_name in sys.modules
 
 class PythonLanguage(Language):
     def list_dependencies(self, path: pathlib.Path, *, basedir: pathlib.Path) -> List[pathlib.Path]:
@@ -97,7 +104,7 @@ class PythonLanguage(Language):
         return '.test.py' in path.name
     
     def is_library_file(self, path: pathlib.Path, *, basedir: pathlib.Path) -> bool:
-        return path.name != '__init__.py' and '.test.py' not in path.name and '.py' in path.name
+        return path.name and path.name[0] != '_' and '.test.py' not in path.name and '.py' in path.name
 
     def list_environments(self, path: pathlib.Path, *, basedir: pathlib.Path) -> Sequence[PythonLanguageEnvironment]:
         # TODO add another environment (e.g. pypy)

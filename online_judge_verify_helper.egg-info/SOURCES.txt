@@ -106,6 +106,7 @@ onlinejudge_verify/documentation/front_matter.py
 onlinejudge_verify/documentation/main.py
 onlinejudge_verify/documentation/type.py
 onlinejudge_verify/languages/__init__.py
+onlinejudge_verify/languages/_python_bundle_backup.py
 onlinejudge_verify/languages/cplusplus.py
 onlinejudge_verify/languages/cplusplus_bundle.py
 onlinejudge_verify/languages/csharpscript.py
