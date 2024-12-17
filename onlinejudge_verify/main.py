@@ -121,6 +121,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
+    # Store original branch name
+    original_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], 
+                                           text=True).strip()
+    logger.info('Original branch: %s', original_branch)
+
     # read config
     if not os.environ.get('GH_PAT'):
         logger.error("GH_PAT is not available. You cannot upload the generated documents to GitHub Pages.")
@@ -152,66 +157,101 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
 
         # Stash any changes including .gitignore modifications
         logger.info('Stashing any local changes')
-        subprocess.run(['git', 'stash'], check=False)
+        stash_output = subprocess.run(['git', 'stash'], capture_output=True, text=True, check=False)
+        had_stashed_changes = "No local changes" not in stash_output.stdout
 
-        # checkout gh-pages
-        logger.info('$ git checkout %s', dst_branch)
         try:
-            subprocess.check_call(['git', 'checkout', dst_branch])
-        except subprocess.CalledProcessError:
-            subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
-            # For orphan branch, we need to remove all tracked files
-            subprocess.run(['git', 'rm', '-rf', '.'], check=False)
+            # checkout gh-pages
+            logger.info('$ git checkout %s', dst_branch)
+            try:
+                subprocess.check_call(['git', 'checkout', dst_branch])
+            except subprocess.CalledProcessError:
+                subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
+                # For orphan branch, we need to remove all tracked files
+                subprocess.run(['git', 'rm', '-rf', '.'], check=False)
 
-        # Check if .verify-helper exists after checkout
-        verify_helper_post_checkout = pathlib.Path('.verify-helper')
-        logger.info('Checking .verify-helper after checkout: exists=%s', verify_helper_post_checkout.exists())
+            # Check if .verify-helper exists after checkout
+            verify_helper_post_checkout = pathlib.Path('.verify-helper')
+            logger.info('Checking .verify-helper after checkout: exists=%s', verify_helper_post_checkout.exists())
 
-        # Now that we're on gh-pages, ensure .verify-helper is ignored
-        logger.info('Updating .gitignore')
-        gitignore_path = pathlib.Path('.gitignore')
-        
-        with open(gitignore_path, 'a') as f:
-            f.write('\n.verify-helper/\n')
+            # Now that we're on gh-pages, ensure .verify-helper is ignored
+            logger.info('Updating .gitignore')
+            gitignore_path = pathlib.Path('.gitignore')
+            
+            with open(gitignore_path, 'a') as f:
+                f.write('\n.verify-helper/\n')
 
-        # Check files before cleanup
-        logger.info('Files before cleanup: %s', os.listdir('.'))
+            # Check files before cleanup
+            logger.info('Files before cleanup: %s', os.listdir('.'))
 
-        # remove all files except .git and .verify-helper
-        logger.info('cleaning directory for %s', dst_branch)
-        for item in os.listdir('.'):
-            if item != '.git' and item != '.verify-helper' and item != '.gitignore':
-                path = pathlib.Path(item)
+            # remove all files except .git and .verify-helper
+            logger.info('cleaning directory for %s', dst_branch)
+            for item in os.listdir('.'):
+                if item != '.git' and item != '.verify-helper' and item != '.gitignore':
+                    path = pathlib.Path(item)
+                    if path.is_file():
+                        path.unlink()
+                    elif path.is_dir():
+                        shutil.rmtree(item)
+
+            # Check files after cleanup
+            logger.info('Files after cleanup: %s', os.listdir('.'))
+
+            # copy files from temp directory
+            logger.info('copying files from temp directory')
+            for path in temp_path.glob('**/*'):
                 if path.is_file():
-                    path.unlink()
-                elif path.is_dir():
-                    shutil.rmtree(item)
+                    rel_path = path.relative_to(temp_path)
+                    rel_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(path), str(rel_path))
 
-        # Check files after cleanup
-        logger.info('Files after cleanup: %s', os.listdir('.'))
+            # Check files after copying from temp
+            logger.info('Files after copying from temp: %s', os.listdir('.'))
+            verify_helper_final = pathlib.Path('.verify-helper')
+            logger.info('Final check of .verify-helper: exists=%s', verify_helper_final.exists())
 
-        # copy files from temp directory
-        logger.info('copying files from temp directory')
-        for path in temp_path.glob('**/*'):
-            if path.is_file():
-                rel_path = path.relative_to(temp_path)
-                rel_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(path), str(rel_path))
+            # commit and push
+            logger.info('$ git add . && git commit && git push')
+            subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
+            subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
+            subprocess.check_call(['git', 'add', '.'])
+            if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
+                message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
+                subprocess.check_call(['git', 'commit', '-m', message])
+                subprocess.check_call(['git', 'push', url, 'HEAD'])
 
-        # Check files after copying from temp
-        logger.info('Files after copying from temp: %s', os.listdir('.'))
-        verify_helper_final = pathlib.Path('.verify-helper')
-        logger.info('Final check of .verify-helper: exists=%s', verify_helper_final.exists())
+        finally:
+            # Return to original branch
+            logger.info('Returning to original branch: %s', original_branch)
+            subprocess.check_call(['git', 'checkout', original_branch])
+            
+            # Restore stashed changes if there were any
+            if had_stashed_changes:
+                logger.info('Restoring stashed changes')
+                subprocess.check_call(['git', 'stash', 'pop'])
 
-        # commit and push
-        logger.info('$ git add . && git commit && git push')
-        subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
-        subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
-        subprocess.check_call(['git', 'add', '.'])
-        if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
-            message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
-            subprocess.check_call(['git', 'commit', '-m', message])
-            subprocess.check_call(['git', 'push', url, 'HEAD'])
+            # Clean current directory
+            logger.info('Cleaning current directory before restoring original state')
+            for item in os.listdir('.'):
+                if item != '.git':
+                    path = pathlib.Path(item)
+                    if path.is_file():
+                        path.unlink()
+                    elif path.is_dir():
+                        shutil.rmtree(item)
+
+            # Restore files from temp directory
+            logger.info('Restoring original files from temp directory')
+            for path in temp_path.glob('**/*'):
+                if path.is_file():
+                    rel_path = path.relative_to(temp_path)
+                    rel_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(path), str(rel_path))
+
+            # Final verification of .verify-helper
+            verify_helper_restored = pathlib.Path('.verify-helper')
+            logger.info('Checking .verify-helper after restoration: exists=%s', verify_helper_restored.exists())
+            
 # def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
 #     # read config
 #     if not os.environ.get('GH_PAT'):
