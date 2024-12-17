@@ -10,6 +10,8 @@ except ModuleNotFoundError:
     exit(1)  # pylint: disable=consider-using-sys-exit
 # pylint: enable=unused-import,ungrouped-imports
 
+import tempfile
+import shutil
 import argparse
 import json
 import glob
@@ -107,8 +109,26 @@ def push_timestamp_to_branch() -> None:
         subprocess.check_call(['git', 'commit', '-m', message])
         subprocess.check_call(['git', 'push', url, 'HEAD'])
 
-import tempfile
-import shutil
+
+def should_include_path(path: pathlib.Path, base_dir: pathlib.Path) -> bool:
+    """
+    Determine if a path should be included in copying operations.
+    
+    Args:
+        path: Path to check
+        base_dir: Base directory for relative path calculation
+    
+    Returns:
+        bool: True if path should be included, False otherwise
+    """
+    rel_path = path.relative_to(base_dir)
+    parts = rel_path.parts
+    
+    # Exclude .git directory and its contents
+    if '.git' in parts:
+        return False
+        
+    return True
 
 def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     """
@@ -128,13 +148,13 @@ def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     # Log initial source directory state
     logger.info('Source directory contents before save:')
     for path in src_dir.rglob('*'):
-        if path.is_file():
+        if path.is_file() and should_include_path(path, src_dir):
             logger.info('- %s', path.relative_to(src_dir))
     
-    # Copy all files to temp directory, including dot directories
+    # Copy all files to temp directory, including dot directories but excluding .git
     file_count = 0
     for path in src_dir.rglob('*'):
-        if path.is_file():
+        if path.is_file() and should_include_path(path, src_dir):
             rel_path = path.relative_to(src_dir)
             dst_path = temp_path / rel_path
             dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,14 +184,14 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     # Log state before cleanup
     logger.info('Source directory contents before restoration:')
     for path in src_dir.rglob('*'):
-        if path.is_file():
+        if path.is_file() and should_include_path(path, src_dir):
             logger.info('- %s', path.relative_to(src_dir))
     
     # Clean current directory
     logger.info('Cleaning directory before restoration')
     removed_count = 0
     for item in src_dir.iterdir():
-        if item != pathlib.Path('.git'):
+        if item.name != '.git':
             if item.is_file():
                 item.unlink()
                 removed_count += 1
@@ -195,7 +215,7 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     # Log final state
     logger.info('Source directory contents after restoration:')
     for path in src_dir.rglob('*'):
-        if path.is_file():
+        if path.is_file() and should_include_path(path, src_dir):
             logger.info('- %s', path.relative_to(src_dir))
     
     # Clean up temp directory
