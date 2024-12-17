@@ -110,13 +110,6 @@ def push_timestamp_to_branch() -> None:
 import tempfile
 import shutil
 
-import os
-import glob
-import shutil
-import subprocess
-import tempfile
-import pathlib
-
 def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     """
     Save the current state of the source directory to a temporary location.
@@ -134,13 +127,13 @@ def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     
     # Log initial source directory state
     logger.info('Source directory contents before save:')
-    for path in src_dir.glob('**/*'):
+    for path in src_dir.rglob('*'):
         if path.is_file():
             logger.info('- %s', path.relative_to(src_dir))
     
-    # Copy all files to temp directory
+    # Copy all files to temp directory, including dot directories
     file_count = 0
-    for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
+    for path in src_dir.rglob('*'):
         if path.is_file():
             rel_path = path.relative_to(src_dir)
             dst_path = temp_path / rel_path
@@ -152,7 +145,7 @@ def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     
     # Verify temp directory contents
     logger.info('Temp directory contents after save:')
-    for path in temp_path.glob('**/*'):
+    for path in temp_path.rglob('*'):
         if path.is_file():
             logger.info('- %s', path.relative_to(temp_path))
     
@@ -170,7 +163,7 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     
     # Log state before cleanup
     logger.info('Source directory contents before restoration:')
-    for path in src_dir.glob('**/*'):
+    for path in src_dir.rglob('*'):
         if path.is_file():
             logger.info('- %s', path.relative_to(src_dir))
     
@@ -189,7 +182,7 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     
     # Restore from temp directory
     restored_count = 0
-    for path in temp_path.glob('**/*'):
+    for path in temp_path.rglob('*'):
         if path.is_file():
             rel_path = path.relative_to(temp_path)
             dst_path = src_dir / rel_path
@@ -201,7 +194,7 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     
     # Log final state
     logger.info('Source directory contents after restoration:')
-    for path in src_dir.glob('**/*'):
+    for path in src_dir.rglob('*'):
         if path.is_file():
             logger.info('- %s', path.relative_to(src_dir))
     
@@ -237,7 +230,7 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
         # Copy documents to temp directory
         logger.info('Copying documents from %s to temp directory', str(src_dir))
         file_count = 0
-        for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
+        for path in src_dir.rglob('*'):
             if path.is_file():
                 rel_path = path.relative_to(src_dir)
                 dst_path = temp_path / rel_path
@@ -268,7 +261,7 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             # Copy files from temp directory
             logger.info('Copying files from temp directory')
             copy_count = 0
-            for path in temp_path.glob('**/*'):
+            for path in temp_path.rglob('*'):
                 if path.is_file():
                     rel_path = path.relative_to(temp_path)
                     rel_path.parent.mkdir(parents=True, exist_ok=True)
