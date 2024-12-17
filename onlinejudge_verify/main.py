@@ -119,7 +119,6 @@ import pathlib
 import logging
 
 logger = logging.getLogger(__name__)
-
 def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
     # Store original branch name
     original_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], 
@@ -138,14 +137,29 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = pathlib.Path(temp_dir)
         
+        # Log initial source directory state
+        logger.info('Source directory contents before copy:')
+        for path in src_dir.glob('**/*'):
+            if path.is_file():
+                logger.info('- %s', path.relative_to(src_dir))
+        
         # Copy source files to temp directory
         logger.info('copying files from %s to temp directory', str(src_dir))
+        file_count = 0
         for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
             if path.is_file():
                 rel_path = path.relative_to(src_dir)
                 dst_path = temp_path / rel_path
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(path), str(dst_path))
+                file_count += 1
+        logger.info('Copied %d files to temp directory', file_count)
+        
+        # Log temp directory contents
+        logger.info('Temp directory contents after copy:')
+        for path in temp_path.glob('**/*'):
+            if path.is_file():
+                logger.info('- %s', path.relative_to(temp_path))
         
         try:
             # checkout gh-pages
@@ -157,23 +171,46 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 # For orphan branch, we need to remove all tracked files
                 subprocess.run(['git', 'rm', '-rf', '.'], check=False)
 
-            # remove all files except .git and .verify-helper
+            # Log state before cleanup
+            logger.info('Directory contents before cleanup:')
+            for item in os.listdir('.'):
+                logger.info('- %s', item)
+
+            # remove all files except .git
             logger.info('cleaning directory for %s', dst_branch)
+            removed_count = 0
             for item in os.listdir('.'):
                 if item != '.git':
                     path = pathlib.Path(item)
                     if path.is_file():
                         path.unlink()
+                        removed_count += 1
                     elif path.is_dir():
                         shutil.rmtree(item)
+                        removed_count += 1
+            logger.info('Removed %d items during cleanup', removed_count)
+
+            # Log state after cleanup
+            logger.info('Directory contents after cleanup:')
+            for item in os.listdir('.'):
+                logger.info('- %s', item)
 
             # copy files from temp directory
             logger.info('copying files from temp directory')
+            copied_count = 0
             for path in temp_path.glob('**/*'):
                 if path.is_file():
                     rel_path = path.relative_to(temp_path)
                     rel_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(str(path), str(rel_path))
+                    copied_count += 1
+            logger.info('Copied %d files from temp directory', copied_count)
+
+            # Log state after copy
+            logger.info('Directory contents after copying from temp:')
+            for item in pathlib.Path('.').glob('**/*'):
+                if item.is_file():
+                    logger.info('- %s', item)
 
             # commit and push
             logger.info('$ git add . && git commit && git push')
@@ -190,25 +227,43 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             logger.info('Returning to original branch: %s', original_branch)
             subprocess.check_call(['git', 'checkout', original_branch])
             
+            # Log state before final cleanup
+            logger.info('Directory contents before final cleanup:')
+            for item in os.listdir('.'):
+                logger.info('- %s', item)
+
             # Clean current directory
             logger.info('Cleaning current directory before restoring original state')
+            removed_count = 0
             for item in os.listdir('.'):
                 if item != '.git':
                     path = pathlib.Path(item)
                     if path.is_file():
                         path.unlink()
+                        removed_count += 1
                     elif path.is_dir():
                         shutil.rmtree(item)
+                        removed_count += 1
+            logger.info('Removed %d items during final cleanup', removed_count)
 
-            # Restore files from temp directory
-            logger.info('Restoring original files from temp directory')
+            # Restore files from temp directory to src_dir
+            logger.info('Restoring original files from temp directory to %s', src_dir)
+            restored_count = 0
             for path in temp_path.glob('**/*'):
                 if path.is_file():
                     rel_path = path.relative_to(temp_path)
                     dst_path = src_dir / rel_path
                     dst_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(str(path), str(dst_path))
+                    restored_count += 1
+            logger.info('Restored %d files to source directory', restored_count)
 
+            # Log final state
+            logger.info('Final source directory contents:')
+            for path in src_dir.glob('**/*'):
+                if path.is_file():
+                    logger.info('- %s', path.relative_to(src_dir))
+                    
 # def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
 #     # read config
 #     if not os.environ.get('GH_PAT'):
