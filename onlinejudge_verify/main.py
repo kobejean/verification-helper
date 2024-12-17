@@ -229,44 +229,44 @@ def generate_gitignore() -> None:
 def _delete_gitignore() -> None:
     """A workaround for the issue https://github.com/online-judge-tools/verification-helper/issues/332
     """
+    return
+    # try:
+    #     # check if it's on GitHub Action
+    #     should_push = 'GITHUB_ACTION' in os.environ and 'GITHUB_TOKEN' in os.environ and os.environ.get('GITHUB_REF', '').startswith('refs/heads/')
+    #     if not should_push:
+    #         return
 
-    try:
-        # check if it's on GitHub Action
-        should_push = 'GITHUB_ACTION' in os.environ and 'GITHUB_TOKEN' in os.environ and os.environ.get('GITHUB_REF', '').startswith('refs/heads/')
-        if not should_push:
-            return
+    #     # checkout the target branch
+    #     branch = os.environ['GITHUB_REF'][len('refs/heads/'):]
+    #     logger.info('$ git checkout %s', branch)
+    #     subprocess.check_call(['git', 'checkout', branch])
 
-        # checkout the target branch
-        branch = os.environ['GITHUB_REF'][len('refs/heads/'):]
-        logger.info('$ git checkout %s', branch)
-        subprocess.check_call(['git', 'checkout', branch])
+    #     # check if .verify-helper/.gitignore exists
+    #     gitignore_path = pathlib.Path('.verify-helper', '.gitignore')
+    #     gitignore_checked_in = (subprocess.run(['git', 'ls-files', '--error-unmatch', str(gitignore_path)], check=False).returncode == 0)
+    #     if not gitignore_checked_in:
+    #         return
+    #     logger.warning('file %s exists in this Git repository. It should not be checked in.', str(gitignore_path))
 
-        # check if .verify-helper/.gitignore exists
-        gitignore_path = pathlib.Path('.verify-helper', '.gitignore')
-        gitignore_checked_in = (subprocess.run(['git', 'ls-files', '--error-unmatch', str(gitignore_path)], check=False).returncode == 0)
-        if not gitignore_checked_in:
-            return
-        logger.warning('file %s exists in this Git repository. It should not be checked in.', str(gitignore_path))
+    #     # read config
+    #     logger.info('use GITHUB_TOKEN')  # NOTE: don't use GH_PAT here, because it may cause infinite loops with triggering GitHub Actions itself
+    #     url = 'https://{}:{}@github.com/{}.git'.format(os.environ['GITHUB_ACTOR'], os.environ['GITHUB_TOKEN'], os.environ['GITHUB_REPOSITORY'])
+    #     logger.info('GITHUB_ACTOR = %s', os.environ['GITHUB_ACTOR'])
+    #     logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
 
-        # read config
-        logger.info('use GITHUB_TOKEN')  # NOTE: don't use GH_PAT here, because it may cause infinite loops with triggering GitHub Actions itself
-        url = 'https://{}:{}@github.com/{}.git'.format(os.environ['GITHUB_ACTOR'], os.environ['GITHUB_TOKEN'], os.environ['GITHUB_REPOSITORY'])
-        logger.info('GITHUB_ACTOR = %s', os.environ['GITHUB_ACTOR'])
-        logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
+    #     # remove .verify-helper/.gitignore
+    #     subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
+    #     subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
+    #     logger.info('$ git rm --cached %s', str(gitignore_path))
+    #     subprocess.check_call(['git', 'rm', '--cached', str(gitignore_path)])
+    #     message = '[auto-verifier] remove .verify-helper/.gitignore (see https://github.com/online-judge-tools/verification-helper/issues/332)'
+    #     logger.info('$ git commit -m ...')
+    #     subprocess.check_call(['git', 'commit', '-m', message])
+    #     logger.info('$ git push ... HEAD')
+    #     subprocess.check_call(['git', 'push', url, 'HEAD'])
 
-        # remove .verify-helper/.gitignore
-        subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
-        subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
-        logger.info('$ git rm --cached %s', str(gitignore_path))
-        subprocess.check_call(['git', 'rm', '--cached', str(gitignore_path)])
-        message = '[auto-verifier] remove .verify-helper/.gitignore (see https://github.com/online-judge-tools/verification-helper/issues/332)'
-        logger.info('$ git commit -m ...')
-        subprocess.check_call(['git', 'commit', '-m', message])
-        logger.info('$ git push ... HEAD')
-        subprocess.check_call(['git', 'push', url, 'HEAD'])
-
-    except Exception:
-        logger.exception('something wrong in _delete_gitignore(). ignored.')
+    # except Exception:
+    #     logger.exception('something wrong in _delete_gitignore(). ignored.')
 
 
 def main(args: Optional[List[str]] = None) -> None:
