@@ -137,9 +137,7 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
         # Create/modify .gitignore to explicitly ignore .verify-helper
         with open('.gitignore', 'a+') as f:
             f.seek(0)
-            content = f.read()
-            if '.verify-helper/' not in content:
-                f.write('\n.verify-helper/\n')
+            f.write('\n.verify-helper/\n')
         
         try:
             subprocess.check_call(['git', 'checkout', dst_branch])
