@@ -110,6 +110,16 @@ def push_timestamp_to_branch() -> None:
 import tempfile
 import shutil
 
+import os
+import glob
+import shutil
+import subprocess
+import tempfile
+import pathlib
+import logging
+
+logger = logging.getLogger(__name__)
+
 def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
     # read config
     if not os.environ.get('GH_PAT'):
@@ -132,22 +142,30 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(path), str(dst_path))
 
+        # Stash any changes including .gitignore modifications
+        logger.info('Stashing any local changes')
+        subprocess.run(['git', 'stash'], check=False)
+
         # checkout gh-pages
         logger.info('$ git checkout %s', dst_branch)
-        # Create/modify .gitignore to explicitly ignore .verify-helper
-        with open('.gitignore', 'a+') as f:
-            f.seek(0)
-            f.write('\n.verify-helper/\n')
-        
         try:
             subprocess.check_call(['git', 'checkout', dst_branch])
         except subprocess.CalledProcessError:
             subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
+            # For orphan branch, we need to remove all tracked files
+            subprocess.run(['git', 'rm', '-rf', '.'], check=False)
+
+        # Now that we're on gh-pages, ensure .verify-helper is ignored
+        logger.info('Updating .gitignore')
+        gitignore_path = pathlib.Path('.gitignore')
+        
+        with open(gitignore_path, 'a') as f:
+            f.write('\n.verify-helper/\n')
 
         # remove all files except .git and .verify-helper
         logger.info('cleaning directory for %s', dst_branch)
         for item in os.listdir('.'):
-            if item != '.git' and item != '.verify-helper':
+            if item != '.git' and item != '.verify-helper' and item != '.gitignore':
                 path = pathlib.Path(item)
                 if path.is_file():
                     path.unlink()
