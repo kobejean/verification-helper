@@ -138,10 +138,6 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = pathlib.Path(temp_dir)
         
-        # Check if .verify-helper exists in the source directory
-        verify_helper_src = src_dir / '.verify-helper'
-        logger.info('Checking .verify-helper in source directory: exists=%s', verify_helper_src.exists())
-
         # Copy source files to temp directory
         logger.info('copying files from %s to temp directory', str(src_dir))
         for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
@@ -151,15 +147,6 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(path), str(dst_path))
         
-        # Check if .verify-helper was copied to temp directory
-        verify_helper_temp = temp_path / '.verify-helper'
-        logger.info('Checking .verify-helper in temp directory: exists=%s', verify_helper_temp.exists())
-
-        # Stash any changes including .gitignore modifications
-        logger.info('Stashing any local changes')
-        stash_output = subprocess.run(['git', 'stash'], capture_output=True, text=True, check=False)
-        had_stashed_changes = "No local changes" not in stash_output.stdout
-
         try:
             # checkout gh-pages
             logger.info('$ git checkout %s', dst_branch)
@@ -170,32 +157,15 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 # For orphan branch, we need to remove all tracked files
                 subprocess.run(['git', 'rm', '-rf', '.'], check=False)
 
-            # Check if .verify-helper exists after checkout
-            verify_helper_post_checkout = pathlib.Path('.verify-helper')
-            logger.info('Checking .verify-helper after checkout: exists=%s', verify_helper_post_checkout.exists())
-
-            # Now that we're on gh-pages, ensure .verify-helper is ignored
-            logger.info('Updating .gitignore')
-            gitignore_path = pathlib.Path('.gitignore')
-            
-            with open(gitignore_path, 'a') as f:
-                f.write('\n.verify-helper/\n')
-
-            # Check files before cleanup
-            logger.info('Files before cleanup: %s', os.listdir('.'))
-
             # remove all files except .git and .verify-helper
             logger.info('cleaning directory for %s', dst_branch)
             for item in os.listdir('.'):
-                if item != '.git' and item != '.verify-helper' and item != '.gitignore':
+                if item != '.git':
                     path = pathlib.Path(item)
                     if path.is_file():
                         path.unlink()
                     elif path.is_dir():
                         shutil.rmtree(item)
-
-            # Check files after cleanup
-            logger.info('Files after cleanup: %s', os.listdir('.'))
 
             # copy files from temp directory
             logger.info('copying files from temp directory')
@@ -204,11 +174,6 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                     rel_path = path.relative_to(temp_path)
                     rel_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(str(path), str(rel_path))
-
-            # Check files after copying from temp
-            logger.info('Files after copying from temp: %s', os.listdir('.'))
-            verify_helper_final = pathlib.Path('.verify-helper')
-            logger.info('Final check of .verify-helper: exists=%s', verify_helper_final.exists())
 
             # commit and push
             logger.info('$ git add . && git commit && git push')
@@ -225,11 +190,6 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             logger.info('Returning to original branch: %s', original_branch)
             subprocess.check_call(['git', 'checkout', original_branch])
             
-            # Restore stashed changes if there were any
-            if had_stashed_changes:
-                logger.info('Restoring stashed changes')
-                subprocess.check_call(['git', 'stash', 'pop'])
-
             # Clean current directory
             logger.info('Cleaning current directory before restoring original state')
             for item in os.listdir('.'):
@@ -245,13 +205,10 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             for path in temp_path.glob('**/*'):
                 if path.is_file():
                     rel_path = path.relative_to(temp_path)
-                    rel_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(path), str(rel_path))
+                    dst_path = src_dir / rel_path
+                    dst_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(path), str(dst_path))
 
-            # Final verification of .verify-helper
-            verify_helper_restored = pathlib.Path('.verify-helper')
-            logger.info('Checking .verify-helper after restoration: exists=%s', verify_helper_restored.exists())
-            
 # def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
 #     # read config
 #     if not os.environ.get('GH_PAT'):
