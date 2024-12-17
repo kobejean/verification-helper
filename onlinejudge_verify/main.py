@@ -116,10 +116,107 @@ import shutil
 import subprocess
 import tempfile
 import pathlib
-import logging
 
-logger = logging.getLogger(__name__)
+def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
+    """
+    Save the current state of the source directory to a temporary location.
+    
+    Args:
+        src_dir: Root directory to save
+    
+    Returns:
+        pathlib.Path: Path to temporary directory containing the saved state
+    """
+    temp_dir = tempfile.mkdtemp()
+    temp_path = pathlib.Path(temp_dir)
+    
+    logger.info('Saving original state from %s to temp directory %s', src_dir, temp_dir)
+    
+    # Log initial source directory state
+    logger.info('Source directory contents before save:')
+    for path in src_dir.glob('**/*'):
+        if path.is_file():
+            logger.info('- %s', path.relative_to(src_dir))
+    
+    # Copy all files to temp directory
+    file_count = 0
+    for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
+        if path.is_file():
+            rel_path = path.relative_to(src_dir)
+            dst_path = temp_path / rel_path
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(path), str(dst_path))
+            file_count += 1
+    
+    logger.info('Saved %d files to temp directory', file_count)
+    
+    # Verify temp directory contents
+    logger.info('Temp directory contents after save:')
+    for path in temp_path.glob('**/*'):
+        if path.is_file():
+            logger.info('- %s', path.relative_to(temp_path))
+    
+    return temp_path
+
+def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) -> None:
+    """
+    Restore the original state from temporary directory back to source directory.
+    
+    Args:
+        temp_path: Path to temporary directory containing saved state
+        src_dir: Root directory to restore to
+    """
+    logger.info('Restoring original state from %s to %s', temp_path, src_dir)
+    
+    # Log state before cleanup
+    logger.info('Source directory contents before restoration:')
+    for path in src_dir.glob('**/*'):
+        if path.is_file():
+            logger.info('- %s', path.relative_to(src_dir))
+    
+    # Clean current directory
+    logger.info('Cleaning directory before restoration')
+    removed_count = 0
+    for item in src_dir.iterdir():
+        if item != pathlib.Path('.git'):
+            if item.is_file():
+                item.unlink()
+                removed_count += 1
+            elif item.is_dir():
+                shutil.rmtree(item)
+                removed_count += 1
+    logger.info('Removed %d items during cleanup', removed_count)
+    
+    # Restore from temp directory
+    restored_count = 0
+    for path in temp_path.glob('**/*'):
+        if path.is_file():
+            rel_path = path.relative_to(temp_path)
+            dst_path = src_dir / rel_path
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(path), str(dst_path))
+            restored_count += 1
+    
+    logger.info('Restored %d files', restored_count)
+    
+    # Log final state
+    logger.info('Source directory contents after restoration:')
+    for path in src_dir.glob('**/*'):
+        if path.is_file():
+            logger.info('- %s', path.relative_to(src_dir))
+    
+    # Clean up temp directory
+    shutil.rmtree(temp_path)
+    logger.info('Cleaned up temporary directory')
+
 def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
+    """
+    Push documents to GitHub Pages branch.
+    
+    Args:
+        src_dir: Directory containing documents to push
+        dst_branch: Target branch (default: 'gh-pages')
+    """
     # Store original branch name
     original_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], 
                                            text=True).strip()
@@ -133,18 +230,12 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
     url = 'https://{}@github.com/{}.git'.format(os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'])
     logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
 
-    # Create a temporary directory for the branch switch
+    # Create a temporary directory for the documents
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = pathlib.Path(temp_dir)
         
-        # Log initial source directory state
-        logger.info('Source directory contents before copy:')
-        for path in src_dir.glob('**/*'):
-            if path.is_file():
-                logger.info('- %s', path.relative_to(src_dir))
-        
-        # Copy source files to temp directory
-        logger.info('copying files from %s to temp directory', str(src_dir))
+        # Copy documents to temp directory
+        logger.info('Copying documents from %s to temp directory', str(src_dir))
         file_count = 0
         for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
             if path.is_file():
@@ -154,13 +245,7 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 shutil.copy2(str(path), str(dst_path))
                 file_count += 1
         logger.info('Copied %d files to temp directory', file_count)
-        
-        # Log temp directory contents
-        logger.info('Temp directory contents after copy:')
-        for path in temp_path.glob('**/*'):
-            if path.is_file():
-                logger.info('- %s', path.relative_to(temp_path))
-        
+
         try:
             # checkout gh-pages
             logger.info('$ git checkout %s', dst_branch)
@@ -168,51 +253,30 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
                 subprocess.check_call(['git', 'checkout', dst_branch])
             except subprocess.CalledProcessError:
                 subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
-                # For orphan branch, we need to remove all tracked files
                 subprocess.run(['git', 'rm', '-rf', '.'], check=False)
 
-            # Log state before cleanup
-            logger.info('Directory contents before cleanup:')
-            for item in os.listdir('.'):
-                logger.info('- %s', item)
-
-            # remove all files except .git
-            logger.info('cleaning directory for %s', dst_branch)
-            removed_count = 0
+            # Clean directory
+            logger.info('Cleaning directory for %s', dst_branch)
             for item in os.listdir('.'):
                 if item != '.git':
                     path = pathlib.Path(item)
                     if path.is_file():
                         path.unlink()
-                        removed_count += 1
                     elif path.is_dir():
                         shutil.rmtree(item)
-                        removed_count += 1
-            logger.info('Removed %d items during cleanup', removed_count)
 
-            # Log state after cleanup
-            logger.info('Directory contents after cleanup:')
-            for item in os.listdir('.'):
-                logger.info('- %s', item)
-
-            # copy files from temp directory
-            logger.info('copying files from temp directory')
-            copied_count = 0
+            # Copy files from temp directory
+            logger.info('Copying files from temp directory')
+            copy_count = 0
             for path in temp_path.glob('**/*'):
                 if path.is_file():
                     rel_path = path.relative_to(temp_path)
                     rel_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(str(path), str(rel_path))
-                    copied_count += 1
-            logger.info('Copied %d files from temp directory', copied_count)
+                    copy_count += 1
+            logger.info('Copied %d files', copy_count)
 
-            # Log state after copy
-            logger.info('Directory contents after copying from temp:')
-            for item in pathlib.Path('.').glob('**/*'):
-                if item.is_file():
-                    logger.info('- %s', item)
-
-            # commit and push
+            # Commit and push
             logger.info('$ git add . && git commit && git push')
             subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
             subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
@@ -226,92 +290,6 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             # Return to original branch
             logger.info('Returning to original branch: %s', original_branch)
             subprocess.check_call(['git', 'checkout', original_branch])
-            
-            # Log state before final cleanup
-            logger.info('Directory contents before final cleanup:')
-            for item in os.listdir('.'):
-                logger.info('- %s', item)
-
-            # Clean current directory
-            logger.info('Cleaning current directory before restoring original state')
-            removed_count = 0
-            for item in os.listdir('.'):
-                if item != '.git':
-                    path = pathlib.Path(item)
-                    if path.is_file():
-                        path.unlink()
-                        removed_count += 1
-                    elif path.is_dir():
-                        shutil.rmtree(item)
-                        removed_count += 1
-            logger.info('Removed %d items during final cleanup', removed_count)
-
-            # Restore files from temp directory to src_dir
-            logger.info('Restoring original files from temp directory to %s', src_dir)
-            restored_count = 0
-            for path in temp_path.glob('**/*'):
-                if path.is_file():
-                    rel_path = path.relative_to(temp_path)
-                    dst_path = src_dir / rel_path
-                    dst_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(path), str(dst_path))
-                    restored_count += 1
-            logger.info('Restored %d files to source directory', restored_count)
-
-            # Log final state
-            logger.info('Final source directory contents:')
-            for path in src_dir.glob('**/*'):
-                if path.is_file():
-                    logger.info('- %s', path.relative_to(src_dir))
-                    
-# def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
-#     # read config
-#     if not os.environ.get('GH_PAT'):
-#         # If we push commits using GITHUB_TOKEN, the build of GitHub Pages will not run. See https://github.com/marketplace/actions/github-pages-deploy#secrets and https://github.com/maxheld83/ghpages/issues/1
-#         logger.error("GH_PAT is not available. You cannot upload the generated documents to GitHub Pages.")
-#         return
-#     logger.info('use GH_PAT')
-#     url = 'https://{}@github.com/{}.git'.format(os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'])
-#     logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
-
-#     # read files before checkout
-#     logger.info('read files from %s', str(src_dir))
-#     src_files = {}
-#     for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
-#         if path.is_file():
-#             logger.info('%s', str(path))
-#             with open(str(path), 'rb') as fh:
-#                 src_files[path.relative_to(src_dir)] = fh.read()
-
-#     # checkout gh-pages
-#     logger.info('$ git checkout %s', dst_branch)
-#     subprocess.check_call(['rm', '.verify-helper/.gitignore'])  # required, to remove .gitignore even if it is untracked
-#     subprocess.check_call(['git', 'stash'])
-#     try:
-#         subprocess.check_call(['git', 'checkout', dst_branch])
-#     except subprocess.CalledProcessError:
-#         subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
-
-#     # remove all non-hidden files and write new files
-#     logger.info('write files to . on %s', dst_branch)
-#     for pattern in ('**/*', '.*/**/*'):
-#         for path in map(pathlib.Path, glob.glob(pattern, recursive=True)):
-#             if path.is_file() and path.parts[0] != '.git':
-#                 path.unlink()
-#     for path, data in src_files.items():
-#         path.parent.mkdir(parents=True, exist_ok=True)
-#         with open(str(path), 'wb') as fh:
-#             fh.write(data)
-
-#     # commit and push
-#     logger.info('$ git add . && git commit && git push')
-#     subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
-#     subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
-#     subprocess.check_call(['git', 'add', '.'])
-#     if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
-#         message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
-#         subprocess.check_call(['git', 'commit', '-m', message])
-#         subprocess.check_call(['git', 'push', url, 'HEAD'])
 
 
 def subcommand_docs(*, jobs: int = 1) -> None:
@@ -342,7 +320,15 @@ def subcommand_docs(*, jobs: int = 1) -> None:
         onlinejudge_verify.documentation.main.main(jobs=jobs)
 
         logger.info('upload documents...')
-        push_documents_to_gh_pages(src_dir=pathlib.Path('.verify-helper/markdown'))
+        # Save entire working directory state
+        temp_path = save_original_state(src_dir=pathlib.Path('.'))
+        
+        try:
+            # Push markdown documents to gh-pages
+            push_documents_to_gh_pages(src_dir=pathlib.Path('.verify-helper/markdown'))
+        finally:
+            # Restore original state regardless of success/failure
+            restore_original_state(temp_path=temp_path, src_dir=pathlib.Path('.'))
 
     else:
         logger.info('generate documents...')
