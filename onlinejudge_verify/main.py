@@ -145,11 +145,11 @@ def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     
     logger.info('Saving original state from %s to temp directory %s', src_dir, temp_dir)
     
-    # Log initial source directory state
-    logger.info('Source directory contents before save:')
-    for path in src_dir.rglob('*'):
-        if path.is_file() and should_include_path(path, src_dir):
-            logger.info('- %s', path.relative_to(src_dir))
+    # # Log initial source directory state
+    # logger.info('Source directory contents before save:')
+    # for path in src_dir.rglob('*'):
+    #     if path.is_file() and should_include_path(path, src_dir):
+    #         logger.info('- %s', path.relative_to(src_dir))
     
     # Copy all files to temp directory, including dot directories but excluding .git
     file_count = 0
@@ -163,11 +163,11 @@ def save_original_state(*, src_dir: pathlib.Path) -> pathlib.Path:
     
     logger.info('Saved %d files to temp directory', file_count)
     
-    # Verify temp directory contents
-    logger.info('Temp directory contents after save:')
-    for path in temp_path.rglob('*'):
-        if path.is_file():
-            logger.info('- %s', path.relative_to(temp_path))
+    # # Verify temp directory contents
+    # logger.info('Temp directory contents after save:')
+    # for path in temp_path.rglob('*'):
+    #     if path.is_file():
+    #         logger.info('- %s', path.relative_to(temp_path))
     
     return temp_path
 
@@ -181,11 +181,11 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     """
     logger.info('Restoring original state from %s to %s', temp_path, src_dir)
     
-    # Log state before cleanup
-    logger.info('Source directory contents before restoration:')
-    for path in src_dir.rglob('*'):
-        if path.is_file() and should_include_path(path, src_dir):
-            logger.info('- %s', path.relative_to(src_dir))
+    # # Log state before cleanup
+    # logger.info('Source directory contents before restoration:')
+    # for path in src_dir.rglob('*'):
+    #     if path.is_file() and should_include_path(path, src_dir):
+    #         logger.info('- %s', path.relative_to(src_dir))
     
     # Clean current directory
     logger.info('Cleaning directory before restoration')
@@ -212,11 +212,11 @@ def restore_original_state(*, temp_path: pathlib.Path, src_dir: pathlib.Path) ->
     
     logger.info('Restored %d files', restored_count)
     
-    # Log final state
-    logger.info('Source directory contents after restoration:')
-    for path in src_dir.rglob('*'):
-        if path.is_file() and should_include_path(path, src_dir):
-            logger.info('- %s', path.relative_to(src_dir))
+    # # Log final state
+    # logger.info('Source directory contents after restoration:')
+    # for path in src_dir.rglob('*'):
+    #     if path.is_file() and should_include_path(path, src_dir):
+    #         logger.info('- %s', path.relative_to(src_dir))
     
     # Clean up temp directory
     shutil.rmtree(temp_path)
