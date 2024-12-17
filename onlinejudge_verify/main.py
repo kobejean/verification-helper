@@ -107,55 +107,121 @@ def push_timestamp_to_branch() -> None:
         subprocess.check_call(['git', 'commit', '-m', message])
         subprocess.check_call(['git', 'push', url, 'HEAD'])
 
+import tempfile
+import shutil
 
 def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
     # read config
     if not os.environ.get('GH_PAT'):
-        # If we push commits using GITHUB_TOKEN, the build of GitHub Pages will not run. See https://github.com/marketplace/actions/github-pages-deploy#secrets and https://github.com/maxheld83/ghpages/issues/1
         logger.error("GH_PAT is not available. You cannot upload the generated documents to GitHub Pages.")
         return
     logger.info('use GH_PAT')
     url = 'https://{}@github.com/{}.git'.format(os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'])
     logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
 
-    # read files before checkout
-    logger.info('read files from %s', str(src_dir))
-    src_files = {}
-    for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
-        if path.is_file():
-            logger.info('%s', str(path))
-            with open(str(path), 'rb') as fh:
-                src_files[path.relative_to(src_dir)] = fh.read()
+    # Create a temporary directory for the branch switch
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = pathlib.Path(temp_dir)
+        
+        # Copy source files to temp directory
+        logger.info('copying files from %s to temp directory', str(src_dir))
+        for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
+            if path.is_file():
+                rel_path = path.relative_to(src_dir)
+                dst_path = temp_path / rel_path
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(path), str(dst_path))
 
-    # checkout gh-pages
-    logger.info('$ git checkout %s', dst_branch)
-    subprocess.check_call(['rm', '.verify-helper/.gitignore'])  # required, to remove .gitignore even if it is untracked
-    subprocess.check_call(['git', 'stash'])
-    try:
-        subprocess.check_call(['git', 'checkout', dst_branch])
-    except subprocess.CalledProcessError:
-        subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
+        # checkout gh-pages
+        logger.info('$ git checkout %s', dst_branch)
+        # Create/modify .gitignore to explicitly ignore .verify-helper
+        with open('.gitignore', 'a+') as f:
+            f.seek(0)
+            content = f.read()
+            if '.verify-helper/' not in content:
+                f.write('\n.verify-helper/\n')
+        
+        try:
+            subprocess.check_call(['git', 'checkout', dst_branch])
+        except subprocess.CalledProcessError:
+            subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
 
-    # remove all non-hidden files and write new files
-    logger.info('write files to . on %s', dst_branch)
-    for pattern in ('**/*', '.*/**/*'):
-        for path in map(pathlib.Path, glob.glob(pattern, recursive=True)):
-            if path.is_file() and path.parts[0] != '.git':
-                path.unlink()
-    for path, data in src_files.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(str(path), 'wb') as fh:
-            fh.write(data)
+        # remove all files except .git and .verify-helper
+        logger.info('cleaning directory for %s', dst_branch)
+        for item in os.listdir('.'):
+            if item != '.git' and item != '.verify-helper':
+                path = pathlib.Path(item)
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    shutil.rmtree(item)
 
-    # commit and push
-    logger.info('$ git add . && git commit && git push')
-    subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
-    subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
-    subprocess.check_call(['git', 'add', '.'])
-    if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
-        message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
-        subprocess.check_call(['git', 'commit', '-m', message])
-        subprocess.check_call(['git', 'push', url, 'HEAD'])
+        # copy files from temp directory
+        logger.info('copying files from temp directory')
+        for path in temp_path.glob('**/*'):
+            if path.is_file():
+                rel_path = path.relative_to(temp_path)
+                rel_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(path), str(rel_path))
+
+        # commit and push
+        logger.info('$ git add . && git commit && git push')
+        subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
+        subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
+        subprocess.check_call(['git', 'add', '.'])
+        if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
+            message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
+            subprocess.check_call(['git', 'commit', '-m', message])
+            subprocess.check_call(['git', 'push', url, 'HEAD'])
+
+# def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-pages') -> None:
+#     # read config
+#     if not os.environ.get('GH_PAT'):
+#         # If we push commits using GITHUB_TOKEN, the build of GitHub Pages will not run. See https://github.com/marketplace/actions/github-pages-deploy#secrets and https://github.com/maxheld83/ghpages/issues/1
+#         logger.error("GH_PAT is not available. You cannot upload the generated documents to GitHub Pages.")
+#         return
+#     logger.info('use GH_PAT')
+#     url = 'https://{}@github.com/{}.git'.format(os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'])
+#     logger.info('GITHUB_REPOSITORY = %s', os.environ['GITHUB_REPOSITORY'])
+
+#     # read files before checkout
+#     logger.info('read files from %s', str(src_dir))
+#     src_files = {}
+#     for path in map(pathlib.Path, glob.glob(str(src_dir) + '/**/*', recursive=True)):
+#         if path.is_file():
+#             logger.info('%s', str(path))
+#             with open(str(path), 'rb') as fh:
+#                 src_files[path.relative_to(src_dir)] = fh.read()
+
+#     # checkout gh-pages
+#     logger.info('$ git checkout %s', dst_branch)
+#     subprocess.check_call(['rm', '.verify-helper/.gitignore'])  # required, to remove .gitignore even if it is untracked
+#     subprocess.check_call(['git', 'stash'])
+#     try:
+#         subprocess.check_call(['git', 'checkout', dst_branch])
+#     except subprocess.CalledProcessError:
+#         subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
+
+#     # remove all non-hidden files and write new files
+#     logger.info('write files to . on %s', dst_branch)
+#     for pattern in ('**/*', '.*/**/*'):
+#         for path in map(pathlib.Path, glob.glob(pattern, recursive=True)):
+#             if path.is_file() and path.parts[0] != '.git':
+#                 path.unlink()
+#     for path, data in src_files.items():
+#         path.parent.mkdir(parents=True, exist_ok=True)
+#         with open(str(path), 'wb') as fh:
+#             fh.write(data)
+
+#     # commit and push
+#     logger.info('$ git add . && git commit && git push')
+#     subprocess.check_call(['git', 'config', '--global', 'user.name', 'GitHub'])
+#     subprocess.check_call(['git', 'config', '--global', 'user.email', 'noreply@github.com'])
+#     subprocess.check_call(['git', 'add', '.'])
+#     if subprocess.run(['git', 'diff', '--quiet', '--staged'], check=False).returncode:
+#         message = '[auto-verifier] docs commit {}'.format(os.environ['GITHUB_SHA'])
+#         subprocess.check_call(['git', 'commit', '-m', message])
+#         subprocess.check_call(['git', 'push', url, 'HEAD'])
 
 
 def subcommand_docs(*, jobs: int = 1) -> None:
