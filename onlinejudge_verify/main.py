@@ -263,6 +263,8 @@ def push_documents_to_gh_pages(*, src_dir: pathlib.Path, dst_branch: str = 'gh-p
             # checkout gh-pages
             logger.info('$ git checkout %s', dst_branch)
             try:
+                subprocess.check_call(['git', 'add', '.'])
+                subprocess.check_call(['git', 'stash'])
                 subprocess.check_call(['git', 'checkout', dst_branch])
             except subprocess.CalledProcessError:
                 subprocess.check_call(['git', 'checkout', '--orphan', dst_branch])
