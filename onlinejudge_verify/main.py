@@ -86,7 +86,8 @@ def subcommand_run(paths: List[pathlib.Path], *, timeout: float = 600, tle: floa
     finally:
         # push results even if some tests failed
         if does_push:
-            push_timestamp_to_branch()
+            pass
+            # push_timestamp_to_branch()
 
 
 def push_timestamp_to_branch() -> None:
