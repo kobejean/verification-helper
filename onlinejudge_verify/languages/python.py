@@ -104,7 +104,7 @@ class PythonLanguage(Language):
         return path.name.endswith('.test.py') or path.name.endswith('_test.py')
     
     def is_library_file(self, path: pathlib.Path, *, basedir: pathlib.Path) -> bool:
-        return path.name and path.name[0] != '_' and not self.is_verification_file(path) and path.name.endswith('.py')
+        return path.name and path.name[0] != '_' and not self.is_verification_file(path, basedir=basedir) and path.name.endswith('.py')
 
     def list_environments(self, path: pathlib.Path, *, basedir: pathlib.Path) -> Sequence[PythonLanguageEnvironment]:
         # TODO add another environment (e.g. pypy)
